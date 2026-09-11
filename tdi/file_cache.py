@@ -6,6 +6,8 @@ PURE 模块：只依赖标准库，不导入 gsuid_core。
 传 Path 会让核心在每次发送时自己去读盘，缓存就白做了。
 缓存键包含 mtime 与大小，图片被替换后会自动重新读取，不需要手动清缓存。
 条目数与总字节数双重设限：只限条目数的话，几张大图就能把核心进程的内存吃掉。
+
+本模块改编自 TodayWaifu 的 twf/file_cache.py（GPL-3.0）。
 """
 from __future__ import annotations
 

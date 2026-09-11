@@ -5,6 +5,8 @@ PURE 模块：只依赖标准库，不导入 gsuid_core。
 「根目录下的一级文件夹 = 一个图片类型」。扫描规则要在不同文件系统上给出一致结果，
 因为每日抽图用的是「按种子选列表下标」，列表顺序一变，所有人的当天结果就都变了。
 所以这里排序统一 casefold，且按 resolve 后的路径去重。
+
+目录扫描规则改编自 TodayWaifu 的 twf/folder_gallery.py（GPL-3.0）。
 """
 from __future__ import annotations
 

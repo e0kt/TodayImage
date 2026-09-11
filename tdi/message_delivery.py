@@ -2,6 +2,8 @@
 
 模块级不硬依赖 gsuid_core：导入被 try/except 包住，缺核心时也能加载，
 这样 remove_private_mentions 这段纯逻辑可以脱离核心直接测。
+
+私聊 at 段剥离改编自 TodayWaifu 的 twf/message_delivery.py（GPL-3.0）。
 """
 from __future__ import annotations
 

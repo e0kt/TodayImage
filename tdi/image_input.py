@@ -5,6 +5,9 @@ PURE 模块：只依赖标准库，不导入 gsuid_core。
 各家适配器把附带的图片挂在 Event 的不同字段上（content 段 / image_list / image），
 所以三个地方都要看一遍再去重；格式也不能信文件名 —— 有的适配器只给一个不带扩展名的
 URL，因此以魔数嗅探为准、扩展名只作兜底（研究 R11、V-IMG-6）。
+
+本模块的行为移植自 TodayWaifu 的 twf/image_input.py（GPL-3.0），
+适配器字段矩阵与魔数嗅探的处理沿用其方案。
 """
 from __future__ import annotations
 

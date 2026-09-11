@@ -9,6 +9,8 @@ daily_records / categories 读不出来只是少定一天的桩、退回默认�
 
 另外这里**不做缓存**：加 TTL 会让已经撤销的类型还能再用一会儿，
 而那正是管理员最不能接受的行为（V-PST-3）。文件很小，一个群一条记录。
+
+原子写入方案沿用 TodayWaifu 的 twf/storage.py（GPL-3.0）。
 """
 from __future__ import annotations
 

@@ -8,6 +8,8 @@ PURE 模块：只依赖标准库，不导入 gsuid_core。
 但只靠种子不够：种子选的是**列表下标**，一旦当天有人上传或删图，
 列表一变，所有人的当天结果就跟着变了，FR-006 的承诺当场失效。
 所以把抽到的具体路径落盘定桩，图库中途变动也不影响已抽的人。
+
+原子写入方案沿用 TodayWaifu 的 twf/storage.py（GPL-3.0）。
 """
 from __future__ import annotations
 
