@@ -1,0 +1,32 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.tmp
+
+# Runtime data — config, records and images live in gsuid_core/data/TodayImage,
+# never in the plugin tree, but guard against a stray local copy.
+config.json
+categories.json
+daily_records.json
+group_permissions.json
+images/

@@ -1,0 +1,65 @@
+{
+  "今日图片": {
+    "desc": "每天一次，全天固定",
+    "data": [
+      {
+        "name": "今日<类型>",
+        "desc": "从对应的本地图片文件夹抽一张图；同一天同一群内重复发送返回同一张。类型由图片根目录下的文件夹名决定，例如「今日黑丝」「今日白丝」",
+        "eg": "今日黑丝",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "图库管理": {
+    "desc": "需要主人或白名单权限",
+    "data": [
+      {
+        "name": "上传图片",
+        "desc": "把消息里附带的图片保存到指定类型文件夹，需在上传白名单内（主人无需白名单）",
+        "eg": "上传图片 黑丝",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查看图片",
+        "desc": "不带类型时列出全部类型与图片数量；带类型时列出该类型的图片及图片ID",
+        "eg": "查看图片 黑丝",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "删除图片",
+        "desc": "按图片ID删除单张；不带ID则删除该类型全部图片",
+        "eg": "删除图片 黑丝 abcd1234",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "重载图片类型",
+        "desc": "重新扫描图片根目录并刷新命令，新增文件夹无需重启核心即可生效",
+        "eg": "重载图片类型",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      }
+    ]
+  },
+  "帮助": {
+    "desc": "",
+    "data": [
+      {
+        "name": "今日图片帮助",
+        "desc": "查看当前可用的今日<类型>命令与管理命令",
+        "eg": "今日图片帮助",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  }
+}
