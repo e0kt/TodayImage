@@ -151,6 +151,19 @@ def pick_image(images: tuple[str, ...], seed: str) -> str | None:
     return random.Random(seed).choice(list(images))
 
 
+def pick_random(images: tuple[str, ...], rng: Any = None) -> str | None:
+    """不定桩地随便抽一张，用于私聊。
+
+    与 pick_image 的区别是**不带种子**：私聊要的是每次都换一张，
+    而种子随机的整个意义恰恰是「同一天同一个人拿到同一张」。
+    因为不定桩，这条路径也不写 daily_records —— 私聊不该把记录文件撑大。
+    """
+    if not images:
+        return None
+    source = rng if rng is not None else random
+    return source.choice(list(images))
+
+
 def _lock_for(chat_key: str, category: str) -> asyncio.Lock:
     key = (chat_key, category)
     lock = _locks.get(key)

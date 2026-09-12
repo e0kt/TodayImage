@@ -135,6 +135,11 @@ def scan_cache_ttl() -> float:
     return float(cfg_int('TodayImageScanCacheTTL', 300, minimum=0))
 
 
+def direct_unlimited() -> bool:
+    """私聊是否不限次数（每次重抽）。群聊不受影响。"""
+    return cfg_bool('TodayImageDirectUnlimited', True)
+
+
 def unique_per_day() -> bool:
     return cfg_bool('TodayImageUniquePerDay', True)
 
@@ -315,7 +320,8 @@ __all__ = [
     'help_sv', 'image_root', 'image_short_id', 'image_upload_sv', 'invalidate_scan_cache',
     'is_master', 'load_categories', 'logger', 'overrides_path', 'plugin_enabled',
     'allowed_tags_for', 'build_category_index', 'category_index', 'configured_blocklist',
-    'default_group_tags', 'group_permission_sv', 'is_blocked', 'is_tag_allowed',
+    'default_group_tags', 'direct_unlimited', 'group_permission_sv', 'is_blocked',
+    'is_tag_allowed',
     'normalize_group_key', 'normalize_tag', 'permissions_path', 'tags_for_group',
     'lookup_category',
     'read_file_bytes_cached', 'records_path', 'reset_utc_offset', 'resolve_short_id',

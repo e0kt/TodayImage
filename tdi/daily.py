@@ -18,6 +18,7 @@ from .shared import (
     allowed_tags_for,
     caption_for,
     category_index,
+    direct_unlimited,
     command_prefix,
     configured_blocklist,
     daily_image_sv,
@@ -29,7 +30,7 @@ from .shared import (
     send_image_reply,
     unique_per_day,
 )
-from .daily_store import current_date, resolve_daily_image
+from .daily_store import current_date, pick_random, resolve_daily_image
 from .dispatch import decide, miss_reason
 
 
@@ -45,13 +46,19 @@ def chat_key(ev: Event) -> str:
 
 
 async def draw_category_image(ev: Event, category: Category) -> str | None:
-    """抽出（或取回）该用户当天在该类型下的图片。
+    """抽出（或取回）该用户在该类型下的图片。
 
-    今天的日期在这里取一次并一路传下去：若在下游各处各取一次，
+    私聊默认不限次数：每次重新随机，不定桩、也不写每日记录。
+    群聊仍然是每人每天每类型固定一张 —— 「今天的」这个语义在群里才有意义，
+    而私聊是自己跟机器人，锁一天只是碍事。
+
+    群聊路径上，今天的日期在这里取一次并一路传下去：若在下游各处各取一次，
     跨零点的请求可能用 A 日的种子写进 B 日的记录（V-REC-6）。
-
     日期按配置的时区偏移算（默认北京时间），而不是服务器本地时间。
     """
+    if ev.group_id is None and direct_unlimited():
+        return pick_random(category.images)
+
     today = current_date(reset_utc_offset())
     return await resolve_daily_image(
         records_path(),

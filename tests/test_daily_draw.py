@@ -243,3 +243,56 @@ class UniquePerDayTests(unittest.TestCase):
         }
         taken = self.store.taken_images(records, 'g1', '黑丝', exclude_key='')
         self.assertEqual(taken, {'/a.png'})
+
+
+class UnpinnedDirectDrawTests(unittest.TestCase):
+    """Direct chats draw fresh every time, with no daily pin and no stored record."""
+
+    def setUp(self):
+        self.store = load_pure_module('daily_store')
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / 'daily_records.json'
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_pick_random_returns_an_image_from_the_gallery(self):
+        images = tuple(f'/img/{i}.png' for i in range(10))
+        self.assertIn(self.store.pick_random(images), images)
+
+    def test_pick_random_varies_across_calls(self):
+        # The whole point: unlike pick_image(), repeated calls must not be pinned.
+        images = tuple(f'/img/{i}.png' for i in range(200))
+        seen = {self.store.pick_random(images) for _ in range(40)}
+        self.assertGreater(len(seen), 1, 'direct-chat draws must not be deterministic')
+
+    def test_pick_random_on_an_empty_gallery_returns_none(self):
+        self.assertIsNone(self.store.pick_random(()))
+
+    def test_pick_random_on_a_single_image_gallery(self):
+        self.assertEqual(self.store.pick_random(('/img/only.png',)), '/img/only.png')
+
+    def test_pick_random_accepts_an_injected_rng_for_determinism_in_tests(self):
+        import random
+        images = tuple(f'/img/{i}.png' for i in range(10))
+        a = self.store.pick_random(images, rng=random.Random(1))
+        b = self.store.pick_random(images, rng=random.Random(1))
+        self.assertEqual(a, b)
+
+    def test_unpinned_draws_write_no_record(self):
+        # A direct chat must not grow daily_records.json -- nothing is pinned there.
+        images = tuple(f'/img/{i}.png' for i in range(10))
+        for _ in range(5):
+            self.store.pick_random(images)
+        self.assertEqual(self.store.load_records(self.path, DATE), {})
+        self.assertFalse(self.path.exists())
+
+    def test_group_pinning_is_untouched_by_the_unpinned_path(self):
+        # Regression guard: adding the direct-chat path must not weaken group draws.
+        self.store.clear_locks()
+        images = tuple(f'/img/{i}.png' for i in range(20))
+        first = asyncio.run(self.store.resolve_daily_image(
+            self.path, DATE, 'g1', 'qq:1', '黑丝', images, exists=lambda p: True))
+        second = asyncio.run(self.store.resolve_daily_image(
+            self.path, DATE, 'g1', 'qq:1', '黑丝', images, exists=lambda p: True))
+        self.assertEqual(first, second)

@@ -82,6 +82,13 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         50,
     ),
 
+    'TodayImageDirectUnlimited': GsBoolConfig(
+        '私聊不限次数',
+        '开启后私聊每次都重新随机一张，不锁定当天那一张，也不写入每日记录。'
+        '关闭则私聊与群聊一致：每人每天每类型固定一张。群聊始终固定，不受此项影响',
+        True,
+    ),
+
     '_DividerGroupPermission': GsDivider('分群授权', ''),
     'TodayImageDefaultGroupTags': GsListStrConfig(
         '新群默认允许的类型',
