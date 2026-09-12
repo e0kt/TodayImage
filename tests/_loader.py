@@ -28,6 +28,7 @@ PURE_MODULES = (
     'dispatch',
     'group_permissions',
     'permissions_text',
+    'chat_context',
 )
 
 

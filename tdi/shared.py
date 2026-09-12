@@ -22,6 +22,7 @@ from ..today_image_config import TodayImageConfig
 from .category_registry import Category, normalize_prefix, read_overrides, resolve_categories
 from .file_cache import read_file_bytes_cached
 from .blocklist import is_blocked
+from .chat_context import chat_group_key, is_direct_chat
 from .group_permissions import is_tag_allowed, normalize_group_key, normalize_tag, tags_for_group
 from .gallery import (
     IMAGE_EXTENSIONS,
@@ -302,7 +303,7 @@ async def send_image_reply(bot: Bot, ev: Event, text: str, image_path: str) -> N
     直接传 Path 会让核心每次自己读盘，这层缓存就白做了（研究 R8）。
     """
     messages: list[Any] = []
-    if ev.group_id is not None and at_user_enabled():
+    if not is_direct_chat(ev) and at_user_enabled():
         messages.append(MessageSegment.at(ev.user_id))
         messages.append('\n')
     if text:
@@ -319,8 +320,10 @@ __all__ = [
     'find_category', 'find_category_directory', 'forward_threshold', 'gallery_manage_sv',
     'help_sv', 'image_root', 'image_short_id', 'image_upload_sv', 'invalidate_scan_cache',
     'is_master', 'load_categories', 'logger', 'overrides_path', 'plugin_enabled',
-    'allowed_tags_for', 'build_category_index', 'category_index', 'configured_blocklist',
+    'allowed_tags_for', 'build_category_index', 'category_index', 'chat_group_key',
+    'configured_blocklist',
     'default_group_tags', 'direct_unlimited', 'group_permission_sv', 'is_blocked',
+    'is_direct_chat',
     'is_tag_allowed',
     'normalize_group_key', 'normalize_tag', 'permissions_path', 'tags_for_group',
     'lookup_category',

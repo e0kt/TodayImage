@@ -18,11 +18,13 @@ from .shared import (
     allowed_tags_for,
     caption_for,
     category_index,
+    chat_group_key,
     direct_unlimited,
     command_prefix,
     configured_blocklist,
     daily_image_sv,
     find_category,
+    is_direct_chat,
     logger,
     plugin_enabled,
     records_path,
@@ -40,9 +42,10 @@ def user_key(ev: Event) -> str:
 
 
 def chat_key(ev: Event) -> str:
-    if ev.group_id is not None:
-        return str(ev.group_id)
-    return f'direct:{ev.bot_id}:{ev.user_id}'
+    """每日记录的会话键。判定走 chat_context，不看 group_id —— 原因见该模块。"""
+    if is_direct_chat(ev):
+        return f'direct:{ev.bot_id}:{ev.user_id}'
+    return chat_group_key(ev)
 
 
 async def draw_category_image(ev: Event, category: Category) -> str | None:
@@ -56,7 +59,7 @@ async def draw_category_image(ev: Event, category: Category) -> str | None:
     跨零点的请求可能用 A 日的种子写进 B 日的记录（V-REC-6）。
     日期按配置的时区偏移算（默认北京时间），而不是服务器本地时间。
     """
-    if ev.group_id is None and direct_unlimited():
+    if is_direct_chat(ev) and direct_unlimited():
         return pick_random(category.images)
 
     today = current_date(reset_utc_offset())
@@ -91,8 +94,8 @@ async def daily_image(bot: Bot, ev: Event):
 
     # 分群授权每次现读，不做缓存：加 TTL 会让已撤销的类型还能再用一会儿，
     # 而那正是管理员最不能接受的行为（V-PST-3）。私聊压根不读这张表。
-    is_direct = ev.group_id is None
-    allowed = frozenset() if is_direct else allowed_tags_for(ev.group_id)
+    is_direct = is_direct_chat(ev)
+    allowed = frozenset() if is_direct else allowed_tags_for(chat_group_key(ev))
 
     # 全部走 TTL 缓存，不碰文件系统：动态触发器对每一条「今日*」消息都会触发，
     # 查不到才是常态，不能让随手打的字变成目录遍历放大器（FR-108）。

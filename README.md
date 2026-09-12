@@ -135,6 +135,58 @@ data/TodayImage/
 > 想让新群默认带上一些类型，可在控制台设置「新群默认允许的类型」——
 > 它只对**还没有任何授权记录**的群生效，不会把管理员撤销过的类型放回去。
 
+## 多平台 / Discord 接入
+
+插件不直接对接任何平台，消息由 GsCore 的适配器送进来，所以理论上适配器支持什么平台就能用什么平台。
+为接入 Discord 这类**频道型**平台，插件侧做了这些准备：
+
+### 会话类型的判定
+
+GsCore 的 `user_type` 有四个取值：`group` / `direct` / `channel` / `sub_channel`。
+Discord、KOOK、QQ 频道用的是 **`channel`（服务器频道）和 `sub_channel`（线程）**，不是 `group`。
+
+插件统一用 `tdi/chat_context.py` 判定，规则与核心自身一致（核心判私聊一律看 `user_type != "direct"`）：
+
+| 场景 | `user_type` | `group_id` | 判定 | 授权键 |
+| --- | --- | --- | --- | --- |
+| QQ 群 | `group` | `465…` | 群聊 | `465…` |
+| QQ / Discord 私聊 | `direct` | — | **私聊** | — |
+| Discord 服务器频道 | `channel` | `chan-123` | 群聊 | `chan-123` |
+| Discord 线程 | `sub_channel` | `thread-9` | 群聊 | `thread-9` |
+| 频道但适配器没填 `group_id` | `channel` | `None` | **仍算群聊** | 空键 → 拒绝 |
+| 适配器忘了给私聊设 `direct` | `group` | `None` | 私聊 | — |
+| 适配器自造的新取值 | `guild_forum` | 任意 | **仍算群聊** | fail closed |
+
+倒数第三行是重点：如果按 `group_id is None` 判私聊，一个没填 `group_id` 的 Discord 频道会被当成私聊，
+**分群授权会被整个绕过**。插件有测试专门钉住这一条，并禁止任何模块再用 `group_id` 做会话分类。
+
+### 授权粒度
+
+授权键就是 `group_id`，所以 **Discord 的每个频道、每个线程都要单独授权**。
+线程不会继承父频道的授权 —— 事件里拿不到父频道 ID，与其猜，不如让它 fail closed。
+
+### 每日记录跨平台隔离
+
+记录键含 `bot_id`，所以 Discord 的 DM 是 `direct:discord:<uid>`、QQ 的是 `direct:onebot:<uid>`，
+同一个人在两个平台上互不干扰。
+
+### 接入时必须先验证的一件事
+
+> [!IMPORTANT]
+> **Discord 适配器是否会下发 `user_pm`？**
+> 分群授权命令挂在 `pm=3` 的 SV 上，靠核心用 `user_pm` 拦人。QQ 的 OneBot 适配器会给群管理员下发 `user_pm=3`，
+> 但 Discord 适配器是否把服务器管理员映射成 `pm<=3` **需要实测**。
+>
+> 如果它恒发 `user_pm=6`，那么 Discord 上只有机器人主人（`masters` 配置里的账号，`pm=0`）能授权频道 ——
+> 功能仍可用，但管理员自助授权不可用。
+>
+> 验证方法：让一个 Discord 服务器管理员发一条消息，在 `data/logs/` 里查该事件的 `user_pm` 值。
+
+### 图片体积
+
+Discord 对普通服务器有单文件上限（约 10MB）。插件的「单张图片大小上限」默认也是 10MB，
+但那只限制**上传**；已在图库里的大图发送失败与否取决于适配器与平台，必要时自行压缩图库。
+
 ## 为什么查不到的类型不给提示
 
 发送一个不存在的类型（例如 `今日不存在`），机器人**不会有任何回复**。

@@ -122,7 +122,15 @@ class HandlerSourceTests(unittest.TestCase):
         self.assertEqual(len(handlers), 3)
         for name, body in handlers:
             with self.subTest(handler=name):
-                self.assertIn('ev.group_id is None', body)
+                self.assertIn('is_direct_chat(ev)', body)
+
+    def test_no_handler_classifies_a_chat_by_group_id(self):
+        # Adapter safety: user_type has four values (group/direct/channel/sub_channel).
+        # Discord uses channel and sub_channel, so `group_id is None` would read a guild
+        # channel as a private chat and bypass the per-group gate. Classification must
+        # go through chat_context, which is what the core itself does.
+        source = (TDI / 'permissions_cmd.py').read_text(encoding='utf-8')
+        self.assertNotIn('ev.group_id', source)
 
 
 if __name__ == '__main__':

@@ -12,7 +12,9 @@ from .shared import (
     LOG_PREFIX,
     allowed_tags_for,
     category_index,
+    chat_group_key,
     group_permission_sv,
+    is_direct_chat,
     logger,
     normalize_tag,
     permissions_path,
@@ -48,16 +50,16 @@ async def _folder_exists(tag: str) -> bool:
 async def allow_tag(bot: Bot, ev: Event):
     if not plugin_enabled():
         return
-    if ev.group_id is None:
+    if is_direct_chat(ev):
         return await send_text(bot, DIRECT_CHAT_SETTING)
 
     tag = normalize_tag(ev.text)
     if not tag:
         return await send_text(bot, USAGE_ALLOW)
 
-    added = await authorise_tag(permissions_path(), ev.group_id, tag, ev.user_id)
+    added = await authorise_tag(permissions_path(), chat_group_key(ev), tag, ev.user_id)
     exists = await _folder_exists(tag)
-    logger.info(f'{LOG_PREFIX} 群 {ev.group_id} 允许 {tag}（操作者 {ev.user_id}，新增={added}）')
+    logger.info(f'{LOG_PREFIX} 群/频道 {chat_group_key(ev)} 允许 {tag}（操作者 {ev.user_id}，新增={added}）')
     await send_text(bot, allow_reply(tag, newly_added=added, folder_exists=exists))
 
 
@@ -73,15 +75,15 @@ async def allow_tag(bot: Bot, ev: Event):
 async def deny_tag(bot: Bot, ev: Event):
     if not plugin_enabled():
         return
-    if ev.group_id is None:
+    if is_direct_chat(ev):
         return await send_text(bot, DIRECT_CHAT_SETTING)
 
     tag = normalize_tag(ev.text)
     if not tag:
         return await send_text(bot, USAGE_DENY)
 
-    removed = await revoke_tag(permissions_path(), ev.group_id, tag, ev.user_id)
-    logger.info(f'{LOG_PREFIX} 群 {ev.group_id} 禁止 {tag}（操作者 {ev.user_id}，生效={removed}）')
+    removed = await revoke_tag(permissions_path(), chat_group_key(ev), tag, ev.user_id)
+    logger.info(f'{LOG_PREFIX} 群/频道 {chat_group_key(ev)} 禁止 {tag}（操作者 {ev.user_id}，生效={removed}）')
     await send_text(bot, deny_reply(tag, removed=removed))
 
 
@@ -97,10 +99,10 @@ async def deny_tag(bot: Bot, ev: Event):
 async def list_tags(bot: Bot, ev: Event):
     if not plugin_enabled():
         return
-    if ev.group_id is None:
+    if is_direct_chat(ev):
         return await send_text(bot, DIRECT_CHAT_LIST)
 
-    tags = allowed_tags_for(ev.group_id)
+    tags = allowed_tags_for(chat_group_key(ev))
     index = await category_index()
     missing = [tag for tag in tags if tag not in index]
     await send_text(bot, list_reply(tags, missing))
