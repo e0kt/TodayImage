@@ -102,3 +102,50 @@ class PrecedenceTests(unittest.TestCase):
         self.assertIsNone(
             self.d.decide('今日天气', '天气', index, images.get, ['今日天气'], is_direct=True)
         )
+
+
+class AllowOverrideTests(unittest.TestCase):
+    """放行名单：把某条命令从屏蔽名单里显式摘掉。
+
+    默认项本身不可删（V-BLK-5：控制台改动不该让插件开始抢别的插件的命令），
+    但当运营方**主动把某个类型迁移过来**、并关掉上游对应功能时，
+    必须有一个显式出口，否则那个类型永远发不出来。
+    """
+
+    def setUp(self):
+        self.bl = load_pure_module('blocklist')
+
+    def test_allow_unblocks_a_default_entry(self):
+        self.assertTrue(self.bl.is_blocked('今日萝莉', []))
+        self.assertFalse(self.bl.is_blocked('今日萝莉', [], allow=['今日萝莉']))
+
+    def test_allow_is_exact_so_sibling_commands_stay_blocked(self):
+        # 放行「今日萝莉」不该顺带放行 TodayWaifu 仍然拥有的那些子命令。
+        allow = ['今日萝莉']
+        self.assertFalse(self.bl.is_blocked('今日萝莉', [], allow=allow))
+        for still_blocked in ('今日萝莉列表', '今日萝莉上传', '今日萝莉离婚'):
+            with self.subTest(command=still_blocked):
+                self.assertTrue(self.bl.is_blocked(still_blocked, [], allow=allow))
+
+    def test_allow_still_blocks_unrelated_defaults(self):
+        allow = ['今日萝莉']
+        for command in ('今日老婆', '今日老公', '今日战双老婆'):
+            with self.subTest(command=command):
+                self.assertTrue(self.bl.is_blocked(command, [], allow=allow))
+
+    def test_allow_wins_over_an_operator_added_entry(self):
+        # 同一个名字同时出现在两边时，放行是更明确的意图，故后生效。
+        self.assertFalse(self.bl.is_blocked('今日天气', ['今日天气'], allow=['今日天气']))
+
+    def test_allow_is_normalised_like_any_entry(self):
+        for probe in ('今日萝莉', ' 今日萝莉 ', '今日萝莉'.upper()):
+            with self.subTest(probe=probe):
+                self.assertFalse(self.bl.is_blocked('今日萝莉', [], allow=[probe]))
+
+    def test_empty_allow_changes_nothing(self):
+        for allow in ([], (), '', None):
+            with self.subTest(allow=allow):
+                self.assertTrue(self.bl.is_blocked('今日萝莉', [], allow=allow))
+
+    def test_blank_allow_entry_does_not_unblock_everything(self):
+        self.assertTrue(self.bl.is_blocked('今日萝莉', [], allow=['', '   ']))

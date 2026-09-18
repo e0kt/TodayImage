@@ -27,6 +27,10 @@ Derived from live inspection of TodayWaifu's registered triggers on this host, n
   `今日老婆` therefore also covers `今日老婆离婚` and any future suffix.
 - **CF-2** — Operator entries **merge with** the defaults and cannot remove them (V-BLK-5). A console edit must not
   be able to make TodayImage start answering another plugin's command.
+- **CF-2a** — *(added later)* `TodayImageBlocklistAllow` is the explicit escape hatch from CF-2, for the case the
+  original rule did not anticipate: the operator **migrates** a category to this plugin and disables the upstream
+  feature. Without it a migrated type can never be served. Allow entries match the **full base name exactly**, so
+  allowing `今日萝莉` does not also allow `今日萝莉列表`, which TodayWaifu still owns.
 - **CF-3** — Read per request, so edits apply with no restart (FR-116).
 - **CF-4** — Matched `strip().casefold()` on both sides.
 - **CF-5** — Blank entries are ignored; an empty list means "defaults only", never "block nothing".

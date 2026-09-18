@@ -34,6 +34,7 @@ def decide(
     images_of: Callable[[str], Any],
     extra_blocklist: Any = None,
     *,
+    allow_blocklist: Any = None,
     is_direct: bool = False,
     allowed_tags: Any = None,
 ) -> str | None:
@@ -49,7 +50,7 @@ def decide(
         allowed_tags: 本群已授权的类型集合（已归一化）。私聊时不会被读取。
     """
     # 1. 黑名单优先于一切：优先于同名的真实文件夹，也优先于群授权。
-    if is_blocked(command, extra_blocklist):
+    if is_blocked(command, extra_blocklist, allow_blocklist):
         return None
 
     # 2. 私聊旁路必须在这里，早于任何对群状态的访问。
@@ -87,6 +88,7 @@ def miss_reason(
     images_of: Callable[[str], Any],
     extra_blocklist: Any = None,
     *,
+    allow_blocklist: Any = None,
     is_direct: bool = False,
     allowed_tags: Any = None,
 ) -> str:
@@ -95,7 +97,7 @@ def miss_reason(
     聊天层的可观测性是刻意放弃的，日志层的不是 —— 运营方仍然需要能查（V-DIS-5）。
     这个函数只应该喂给 logger，绝不能出现在回复里。
     """
-    if is_blocked(command, extra_blocklist):
+    if is_blocked(command, extra_blocklist, allow_blocklist):
         return 'blocked'
     if not is_direct and not _is_allowed(suffix, allowed_tags):
         return 'unauthorised'

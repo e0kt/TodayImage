@@ -260,6 +260,11 @@ def configured_blocklist() -> Any:
     return _cfg('TodayImageBlocklist')
 
 
+def allowed_blocklist() -> Any:
+    """从屏蔽名单里显式摘掉的命令（类型已迁移过来时用）。"""
+    return _cfg('TodayImageBlocklistAllow')
+
+
 async def category_index() -> dict[str, str]:
     """「归一化类型名 -> 原始类型名」映射，由 TTL 缓存的扫描结果构建。
 
@@ -324,7 +329,7 @@ __all__ = [
     'find_category', 'find_category_directory', 'forward_threshold', 'gallery_manage_sv',
     'help_sv', 'image_root', 'image_short_id', 'image_upload_sv', 'invalidate_scan_cache',
     'is_master', 'load_categories', 'logger', 'overrides_path', 'plugin_enabled',
-    'allowed_tags_for', 'build_category_index', 'category_index', 'chat_group_key',
+    'allowed_blocklist', 'allowed_tags_for', 'build_category_index', 'category_index', 'chat_group_key',
     'configured_blocklist',
     'default_group_tags', 'direct_unlimited', 'group_permission_sv', 'is_blocked',
     'is_direct_chat',

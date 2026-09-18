@@ -15,6 +15,7 @@ from .shared import (
     Event,
     LOG_PREFIX,
     Path,
+    allowed_blocklist,
     allowed_tags_for,
     caption_for,
     category_index,
@@ -91,6 +92,7 @@ async def daily_image(bot: Bot, ev: Event):
     suffix = str(ev.text or '').strip()
 
     extra = configured_blocklist()
+    allow = allowed_blocklist()
 
     # 分群授权每次现读，不做缓存：加 TTL 会让已撤销的类型还能再用一会儿，
     # 而那正是管理员最不能接受的行为（V-PST-3）。私聊压根不读这张表。
@@ -109,7 +111,7 @@ async def daily_image(bot: Bot, ev: Event):
 
     name = decide(
         command, suffix, index, images_of, extra,
-        is_direct=is_direct, allowed_tags=allowed,
+        allow_blocklist=allow, is_direct=is_direct, allowed_tags=allowed,
     )
     if name is None:
         # 未知 / 被屏蔽 / 未授权 / 空文件夹 / 畸形输入 一律静默，彼此在外部不可区分
@@ -117,7 +119,7 @@ async def daily_image(bot: Bot, ev: Event):
         # 聊天层不解释，但日志层必须能查（V-DIS-5）。
         logger.debug(
             f'{LOG_PREFIX} 不回复 {command!r}: '
-            f'{miss_reason(command, suffix, index, images_of, extra, is_direct=is_direct, allowed_tags=allowed)}'
+            f'{miss_reason(command, suffix, index, images_of, extra, allow_blocklist=allow, is_direct=is_direct, allowed_tags=allowed)}'
         )
         return
 

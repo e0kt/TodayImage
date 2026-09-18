@@ -107,6 +107,15 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         [],
     ),
 
+    'TodayImageBlocklistAllow': GsListStrConfig(
+        '放行的命令',
+        '把某条命令从屏蔽名单里摘掉，用于「该类型已迁移到本插件、上游功能已关闭」的情况。'
+        '例如把「今日萝莉」从 TodayWaifu 迁过来后，这里填「今日萝莉」即可。'
+        '按完整命令名精确匹配：放行「今日萝莉」不会顺带放行「今日萝莉列表」等仍归上游的子命令。'
+        '放行前请确认上游插件确实已关闭该功能，否则两个插件会同时回复',
+        [],
+    ),
+
     '_DividerPerformance': GsDivider('性能设置', ''),
     'TodayImageScanCacheTTL': GsIntConfig(
         '目录扫描缓存时间(秒)',

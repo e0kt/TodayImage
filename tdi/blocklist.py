@@ -46,19 +46,28 @@ def normalize_entries(values: Any) -> tuple[str, ...]:
     return tuple(result)
 
 
-def effective_blocklist(extra: Any = None) -> tuple[str, ...]:
-    """默认名单 + 运营方补充。补充只能增不能减（V-BLK-5）：
-    任何控制台改动都不该让本插件开始回复别的插件的命令。
+def effective_blocklist(extra: Any = None, allow: Any = None) -> tuple[str, ...]:
+    """默认名单 + 运营方补充 - 运营方放行。
+
+    补充（extra）只能增不能减：随手改个配置就让插件开始抢别的插件的命令，
+    风险太大（V-BLK-5）。
+
+    放行（allow）是那条规则的显式出口。当运营方把某个类型**迁移**到本插件、
+    并关掉上游对应功能时（例如把「今日萝莉」从 TodayWaifu 搬过来），
+    没有出口的话那个类型就永远发不出来。放行要求逐条写明，
+    且按**完整基名精确匹配** —— 放行「今日萝莉」不会顺带放行
+    「今日萝莉列表」这些仍归上游所有的子命令。
     """
+    allowed = set(normalize_entries(allow))
     bases = [name.casefold() for name in DEFAULT_BLOCKLIST]
     for name in normalize_entries(extra):
         if name not in bases:
             bases.append(name)
-    return tuple(bases)
+    return tuple(base for base in bases if base not in allowed)
 
 
-def is_blocked(command: str, extra: Any = None) -> bool:
+def is_blocked(command: str, extra: Any = None, allow: Any = None) -> bool:
     text = str(command or '').strip().casefold()
     if not text:
         return False
-    return any(text == base or text.startswith(base) for base in effective_blocklist(extra))
+    return any(text == base or text.startswith(base) for base in effective_blocklist(extra, allow))
