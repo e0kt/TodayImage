@@ -111,6 +111,10 @@ component yields a different record, so draws are independent across users, chat
 - **V-REC-6** — The date is captured **once** at the start of a draw and reused for both the seed and the record, so
   a request spanning midnight cannot seed against one date and persist under another. (Date-rollover edge case.)
 
+> **自 feature 004 起有变**：抽图种子在该 (日期, 群, 类型) 被重置过时会追加 `:r{epoch}` 后缀，
+> 且重置会写下一个排除集，使重抽必定换图。未被重置时种子与下述格式逐字节一致。
+> 见 [004 data-model](../004-group-category-reset/data-model.md)。
+
 **Derivation of `image`**: `random.Random(f'{date}:{user_key}:{chat_key}:{category}').choice(images)` — the seed
 scheme 今日萝莉 uses (`twf/shared.py::_daily_rng`). The record pins the outcome so a mid-day gallery edit cannot
 reshuffle it (research R5).

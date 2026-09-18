@@ -20,4 +20,5 @@ from .tdi import shared   # noqa: E402,F401  公共层：SV 实例与配置
 from .tdi import help     # noqa: E402,F401  帮助（须早于 manage）
 from .tdi import manage   # noqa: E402,F401  上传 / 查看 / 删除 / 重载
 from .tdi import permissions_cmd  # noqa: E402,F401  分群授权（TodayImage允许/禁止/列表）
+from .tdi import reset_cmd        # noqa: E402,F401  分群类型重置（TodayImage重置，pm=1）
 from .tdi import daily    # noqa: E402,F401  今日<类型> 抽图

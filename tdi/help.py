@@ -8,6 +8,7 @@ from .shared import (
     command_prefix,
     help_sv,
     image_root,
+    is_direct_chat,
     is_master,
     load_categories,
     logger,
@@ -31,10 +32,15 @@ async def show_help(bot: Bot, ev: Event):
         return
 
     # 披露级别由权限决定，不是把清单整个删掉 —— 否则主人就没法从聊天里管图库了。
-    master = is_master(ev)
+    # 但权限只答了「谁在问」，还要答「谁会看到答案」：群/频道里的回复对全体成员
+    # 可见，其中必然包含非主人，而 FR-110 约束的是「对非主人可见的回复」，不是
+    # 「发给非主人的回复」。所以完整清单与路径只在私聊披露 (FR-110, V-DIS-2)。
+    # 判私聊必须走 is_direct_chat：Discord/KOOK/QQ 频道的 user_type 是 channel,
+    # 仅按 group_id 是否为空来判断会把公开频道当成私聊, 反把泄露面扩大到整个频道。
+    disclose = is_master(ev) and is_direct_chat(ev)
     categories = ()
     root = None
-    if master:
+    if disclose:
         try:
             categories, _ = await load_categories()
         except OSError as exc:
@@ -45,7 +51,7 @@ async def show_help(bot: Bot, ev: Event):
         bot,
         build_help_text(
             command_prefix(),
-            is_master=master,
+            is_master=disclose,
             categories=categories,
             image_root=root,
         ),

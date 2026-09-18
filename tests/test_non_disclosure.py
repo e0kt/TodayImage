@@ -76,6 +76,45 @@ class HandlerSourceTests(unittest.TestCase):
             if 'image_root()' in line and 'f\'' in line:
                 self.assertIn('新增类型', line + source, 'unexpected path disclosure site')
 
+    def test_group_listing_branch_never_reaches_the_image_root(self):
+        """「查看图片」在群里必须先收敛再回复：群分支内不得出现 image_root。
+
+        这是 V-DIS-2 在管理命令上的落点。pm=1 限制了谁能调用，但回复是发回原会话的,
+        群里每个人都会读到 —— FR-110 管的是「对非主人可见的回复」，不是「发给谁」。
+        用 AST 而非字符串匹配，改写措辞不会让这条守卫失效。
+        """
+        import ast
+
+        tree = ast.parse((TDI / 'manage.py').read_text(encoding='utf-8'))
+        handler = next(
+            (n for n in ast.walk(tree)
+             if isinstance(n, ast.AsyncFunctionDef) and n.name == 'list_images'),
+            None,
+        )
+        self.assertIsNotNone(handler, 'list_images handler not found')
+
+        branches = [
+            n for n in ast.walk(handler)
+            if isinstance(n, ast.If)
+            and isinstance(n.test, ast.UnaryOp) and isinstance(n.test.op, ast.Not)
+            and isinstance(n.test.operand, ast.Name) and n.test.operand.id == 'is_direct'
+        ]
+        self.assertTrue(branches, 'no `if not is_direct:` guard in list_images')
+
+        for branch in branches:
+            names = {n.id for n in ast.walk(branch) if isinstance(n, ast.Name)}
+            self.assertNotIn('image_root', names,
+                             'the group branch must not disclose the image root')
+            self.assertIn('allowed', names,
+                          'the group branch must scope the listing to authorised tags')
+
+    def test_group_listing_is_scoped_by_authorisation(self):
+        """群聊分支必须按本群授权过滤，而不是把整个图库列出来。"""
+        source = (TDI / 'manage.py').read_text(encoding='utf-8')
+        self.assertIn('_visible_in_group', source)
+        self.assertIn('allowed_tags_for', source,
+                      'group listing must read the per-group authorisation table')
+
     def test_silent_paths_are_logged(self):
         source = (TDI / 'daily.py').read_text(encoding='utf-8')
         self.assertIn('logger.debug', source,

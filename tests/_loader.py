@@ -29,6 +29,7 @@ PURE_MODULES = (
     'group_permissions',
     'permissions_text',
     'chat_context',
+    'reset_text',
 )
 
 

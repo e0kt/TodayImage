@@ -24,6 +24,7 @@ from .file_cache import read_file_bytes_cached
 from .blocklist import is_blocked
 from .chat_context import chat_group_key, is_direct_chat
 from .group_permissions import is_tag_allowed, normalize_group_key, normalize_tag, tags_for_group
+from .daily_store import reset_group_category
 from .gallery import (
     IMAGE_EXTENSIONS,
     RESERVED_DIRECTORY_NAMES,
@@ -57,6 +58,9 @@ daily_image_sv = SV('今日图片-每日抽取', priority=25)
 #   0=master, 1=superuser, 2=群主, 3=群管理员, 6=普通用户
 # 不自己维护管理员名单，也不在 handler 里重复判断（研究 R1）。
 group_permission_sv = SV('今日图片-群授权', pm=3, priority=21)
+# 重置会改变全群所有人当天已经拿到的结果，外溢比授权更大，所以收紧到 pm=1
+# —— 只有 master(0) 与 superuser(1)，群主(2)与群管理员(3)都不行。
+reset_sv = SV('今日图片-重置', pm=1, priority=21)
 
 
 # ── 配置取值 ──────────────────────────────────────────────────────────────────
@@ -327,7 +331,8 @@ __all__ = [
     'is_tag_allowed',
     'normalize_group_key', 'normalize_tag', 'permissions_path', 'tags_for_group',
     'lookup_category',
-    'read_file_bytes_cached', 'records_path', 'reset_utc_offset', 'resolve_short_id',
+    'read_file_bytes_cached', 'records_path', 'reset_group_category', 'reset_sv',
+    'reset_utc_offset', 'resolve_short_id',
     'safe_send', 'unique_per_day',
     'scan_categories_sync',
     'scan_category_directories', 'send_image_reply', 'send_text', 'time', 'upload_max_bytes',

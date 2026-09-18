@@ -10,8 +10,10 @@ from .shared import (
     LOG_PREFIX,
     MessageSegment,
     Path,
+    allowed_tags_for,
     asyncio,
     can_upload,
+    chat_group_key,
     find_category,
     find_category_directory,
     forward_threshold,
@@ -20,8 +22,10 @@ from .shared import (
     image_short_id,
     image_upload_sv,
     invalidate_scan_cache,
+    is_direct_chat,
     load_categories,
     logger,
+    normalize_tag,
     plugin_enabled,
     resolve_short_id,
     safe_send,
@@ -36,6 +40,15 @@ _SHORT_ID_RE = re.compile(r'^[0-9a-f]{8}$', re.IGNORECASE)
 
 def _clean(text: Any) -> str:
     return str(text or '').strip().strip('"“”‘’')
+
+
+def _visible_in_group(category: Any, allowed: frozenset[str]) -> bool:
+    """该类型在本群是否已授权。本名与别名任一被授权即算 —— 与 dispatch._is_allowed
+    按用户实际输入归一化后查表的口径保持一致，否则列表会和实际能不能用对不上。"""
+    keys = {normalize_tag(category.name)}
+    keys.update(normalize_tag(alias) for alias in getattr(category, 'aliases', ()) or ())
+    keys.discard('')
+    return bool(keys & allowed)
 
 
 # ── 重载 ──────────────────────────────────────────────────────────────────────
@@ -165,6 +178,12 @@ async def list_images(bot: Bot, ev: Event):
     if not plugin_enabled():
         return
 
+    # 回复发回原会话：群/频道里全体成员都会看到，其中必然包含非主人。
+    # 所以群聊一律只谈「本群已授权的类型」，且不带任何文件夹结构与路径
+    # （FR-110, V-DIS-2）；完整图库与根目录只在私聊披露。
+    is_direct = is_direct_chat(ev)
+    allowed = frozenset() if is_direct else allowed_tags_for(chat_group_key(ev))
+
     name = _clean(ev.text)
     if not name:
         try:
@@ -172,6 +191,19 @@ async def list_images(bot: Bot, ev: Event):
         except OSError as exc:
             logger.warning(f'{LOG_PREFIX} 扫描图库失败: {exc}')
             return await send_text(bot, f'扫描图片目录失败：{exc}')
+
+        if not is_direct:
+            categories = tuple(c for c in categories if _visible_in_group(c, allowed))
+            if not categories:
+                # 与「图库为空」同一句：本群没授权什么，和这台机器上有没有图库无关。
+                return await send_text(bot, '本群还没有已授权的图片类型。')
+            lines = ['本群已授权的图片类型：']
+            for category in categories:
+                flag = '' if category.enabled else '（已停用）'
+                commands = '、'.join(category.commands) if category.commands else '（无命令）'
+                lines.append(f'· {category.name}{flag} — {len(category.images)} 张 → {commands}')
+            return await send_text(bot, '\n'.join(lines))
+
         if not categories:
             return await send_text(
                 bot,
@@ -189,6 +221,10 @@ async def list_images(bot: Bot, ev: Event):
         return await send_text(bot, '\n'.join(lines))
 
     category = await find_category(name)
+    # 群聊里未授权的类型按「不存在」处理：既不让管理命令绕过分群授权把图发进来，
+    # 也不新增一个「授权了但没图 / 压根没这个类型」的区分口子。
+    if category is not None and not is_direct and not _visible_in_group(category, allowed):
+        category = None
     if category is None:
         return await send_text(bot, f'不存在图片类型【{name}】。')
     if not category.images:

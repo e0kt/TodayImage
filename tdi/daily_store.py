@@ -23,6 +23,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from .group_permissions import normalize_tag
+
 # 每日重置的时区偏移（小时）。默认 +8 = 北京时间：
 # 若直接用服务器本地时间，机器放在别的时区时重置点就会漂到当地半夜以外的时刻。
 # 中国全年不实行夏令时，所以固定偏移就够精确，不必依赖系统的 tzdata。
@@ -50,32 +52,90 @@ def parse_key(key: str) -> tuple[str, str, str] | None:
 
 # ── 读写 ──────────────────────────────────────────────────────────────────────
 
-def load_records(path: Path, date: str) -> dict[str, dict[str, Any]]:
-    """读取当天记录。文件坏了就当空表 —— 大不了少定一天的桩，不能让命令炸掉。"""
+def _load_payload(
+    path: Path, date: str
+) -> tuple[dict[str, dict[str, Any]], dict[str, int], dict[str, list[str]]]:
+    """一次读盘同时取出当天的记录与重置代数。文件坏了一律当空表。
+
+    降级方向：记录为空 = 少定一天的桩；代数为空 = 回到未重置状态。
+    两者都不会放大影响面（S-405）。
+    """
     if not path.is_file():
-        return {}
+        return {}, {}, {}
     try:
         payload = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return {}
+        return {}, {}, {}
     if not isinstance(payload, dict) or payload.get('date') != date:
-        return {}
-    records = payload.get('records')
-    if not isinstance(records, dict):
-        return {}
-    return {str(k): dict(v) for k, v in records.items() if isinstance(v, dict)}
+        return {}, {}, {}
+
+    raw_records = payload.get('records')
+    records = (
+        {str(k): dict(v) for k, v in raw_records.items() if isinstance(v, dict)}
+        if isinstance(raw_records, dict) else {}
+    )
+    # 老文件没有 resets 字段，读作空表即可，无需迁移（S-402）。
+    raw_resets = payload.get('resets')
+    resets = (
+        {str(k): int(v) for k, v in raw_resets.items() if isinstance(v, int)}
+        if isinstance(raw_resets, dict) else {}
+    )
+    raw_excludes = payload.get('excludes')
+    excludes = (
+        {str(k): [str(i) for i in v] for k, v in raw_excludes.items() if isinstance(v, list)}
+        if isinstance(raw_excludes, dict) else {}
+    )
+    return records, resets, excludes
 
 
-def save_records(path: Path, date: str, records: dict[str, dict[str, Any]]) -> None:
-    """整份覆盖写。写入时只留当天，过期记录直接丢掉（S-2），不做归档。"""
-    payload = {'version': RECORDS_VERSION, 'date': date, 'records': records}
+def load_records(path: Path, date: str) -> dict[str, dict[str, Any]]:
+    """读取当天记录。文件坏了就当空表 —— 大不了少定一天的桩，不能让命令炸掉。"""
+    return _load_payload(path, date)[0]
+
+
+def load_resets(path: Path, date: str) -> dict[str, int]:
+    """读取当天的重置代数表。"""
+    return _load_payload(path, date)[1]
+
+
+def load_excludes(path: Path, date: str) -> dict[str, list[str]]:
+    """读取当天各 (群,类型) 上一轮已发出、本轮需排除的图片。"""
+    return _load_payload(path, date)[2]
+
+
+def save_records(
+    path: Path,
+    date: str,
+    records: dict[str, dict[str, Any]],
+    resets: dict[str, int] | None = None,
+    excludes: dict[str, list[str]] | None = None,
+) -> None:
+    """整份覆盖写。写入时只留当天，过期记录直接丢掉（S-2），不做归档。
+
+    resets 传 None 表示「沿用盘上当天的代数」。这一点不能省：抽图走
+    upsert_record -> save_records，若那条路径把 resets 写没了，第一次抽图
+    就会把代数清零，重置对后面的人当场失效（S-403 同时要求跨日一并丢弃）。
+    """
+    if resets is None or excludes is None:
+        _, disk_resets, disk_excludes = _load_payload(path, date)
+        if resets is None:
+            resets = disk_resets
+        if excludes is None:
+            excludes = disk_excludes
+    payload = {
+        'version': RECORDS_VERSION,
+        'date': date,
+        'records': records,
+        'resets': resets,
+        'excludes': excludes,
+    }
     _atomic_write_json(path, payload)
 
 
 def upsert_record(path: Path, date: str, key: str, image: str) -> dict[str, dict[str, Any]]:
-    records = load_records(path, date)
+    records, resets, excludes = _load_payload(path, date)
     records[key] = {'image': image, 'created_at': time.time()}
-    save_records(path, date, records)
+    save_records(path, date, records, resets, excludes)
     return records
 
 
@@ -141,8 +201,46 @@ def taken_images(
     return taken
 
 
-def draw_seed(date: str, user_key: str, chat_key: str, category: str) -> str:
-    return f'{date}:{user_key}:{chat_key}:{category}'
+def reset_key(chat_key: str, category: str) -> str:
+    """代数与排除集的键。
+
+    类型名在这里统一归一（去括号、strip、casefold），与图库索引、分群授权用同一套规则。
+    不归一的话，存储层拿到 '【黑丝】' 会静默匹配不到任何记录 ——
+    表现为「清除 0 条」，看起来跟「本来就没人抽过」一模一样，极难排查。
+    """
+    return f'{chat_key}{_SEPARATOR}{normalize_tag(category)}'
+
+
+def parse_reset_key(key: str) -> tuple[str, str] | None:
+    """只切第一个分隔符，因此类型名里带 | 也能正确还原（V-EPO-1）。"""
+    parts = key.split(_SEPARATOR, 1)
+    if len(parts) != 2:
+        return None
+    return parts[0], parts[1]
+
+
+def reset_epoch(resets: dict[str, int], chat_key: str, category: str) -> int:
+    value = resets.get(reset_key(chat_key, category))
+    return value if isinstance(value, int) and value > 0 else 0
+
+
+def draw_seed(
+    date: str,
+    user_key: str,
+    chat_key: str,
+    category: str,
+    epoch: int = 0,
+) -> str:
+    """抽图种子。
+
+    epoch 为 0 时**必须**与加入重置功能之前逐字节相同 —— 否则这个功能一上线，
+    就会把所有群当天已经抽到的图静默换掉一遍，那是一次无声的全局副作用（V-SEED-1）。
+    只有真的被重置过的 (日期, 群, 类型) 才会拿到不同的种子。
+    """
+    seed = f'{date}:{user_key}:{chat_key}:{category}'
+    if epoch:
+        seed = f'{seed}:r{epoch}'
+    return seed
 
 
 def pick_image(images: tuple[str, ...], seed: str) -> str | None:
@@ -178,6 +276,60 @@ def clear_locks() -> None:
     _locks.clear()
 
 
+async def reset_group_category(
+    path: Path,
+    date: str,
+    chat_key: str,
+    category: str,
+) -> tuple[int, int]:
+    """清掉某群某类型当天的全部绑定，并把重置代数 +1。
+
+    返回 (清除条数, 新代数)。
+
+    两件事必须在同一次原子写内完成：只清记录而不改代数的话，所有人重抽会用
+    同样的种子拿回同样的图 —— 功能等于没做（research R1 实测）。分两次写则中间
+    崩溃会留下同样的状态（I-402）。
+
+    持的是抽图那把锁，否则会出现一半人停在上一轮、一半人进入新一轮，
+    而两轮之间并不保证互不撞图（FR-408）。
+    """
+    category = normalize_tag(category)
+    async with _lock_for(chat_key, category):
+        records, resets, excludes = await asyncio.to_thread(_load_payload, path, date)
+
+        target = category
+        survivors: dict[str, dict[str, Any]] = {}
+        cleared_images: set[str] = set()
+        cleared = 0
+        for key, entry in records.items():
+            parsed = parse_key(key)
+            if parsed is not None:
+                row_chat, _row_user, row_category = parsed
+                if row_chat == chat_key and normalize_tag(row_category) == target:
+                    cleared += 1
+                    image = entry.get('image')
+                    if isinstance(image, str) and image:
+                        cleared_images.add(image)
+                    continue
+            survivors[key] = entry
+
+        # 即使一条都没清，代数也要 +1：否则「今天还没人抽过 -> 重置无效 ->
+        # 稍后抽的人仍落在旧种子」会形成一个很难察觉的空洞（V-RES-2）。
+        rkey = reset_key(chat_key, category)
+        epoch = reset_epoch(resets, chat_key, category) + 1
+        resets = dict(resets)
+        resets[rkey] = epoch
+
+        # 只换种子只能做到「很可能不同」：两个不同的种子有 1/N 的概率落回同一张图，
+        # 50 张的图库下连抽几轮就会撞上。而 FR-402 要的是 MUST。
+        # 所以把这一轮清掉的图记成排除集，下一轮直接不从里面选。
+        excludes = dict(excludes)
+        excludes[rkey] = sorted(cleared_images)
+
+        await asyncio.to_thread(save_records, path, date, survivors, resets, excludes)
+        return cleared, epoch
+
+
 def _default_exists(path: str) -> bool:
     return Path(path).is_file()
 
@@ -210,20 +362,27 @@ async def resolve_daily_image(
 
     # 抽签必须在锁内完成：去重要看「别人已经抽走了哪些」，
     # 在锁外算会让并发的首抽读到同一份快照，从而抽到同一张图。
+    # 重置代数也在同一把锁内读，否则可能出现一半人用旧代数、一半人用新代数。
     async with _lock_for(chat_key, category):
-        records = await asyncio.to_thread(load_records, records_path, date)
+        records, resets, excludes = await asyncio.to_thread(_load_payload, records_path, date)
+        epoch = reset_epoch(resets, chat_key, category)
+        excluded = set(excludes.get(reset_key(chat_key, category), ()))
         pinned = get_record_image(records, key)
         if pinned is not None and file_exists(pinned):
             return pinned
 
         pool = list(images)
+        if excluded:
+            # 上一轮已经发过的图不再参与，保证重置后确实换一张（FR-402）。
+            # 图不够分时退回全量，宁可重复也不能没得发。
+            pool = [image for image in pool if image not in excluded] or pool
         if unique_per_chat:
             taken = taken_images(records, chat_key, category, key)
             remaining = [image for image in pool if image not in taken]
             # 图片不够分时退回整个图库：宁可有人撞图，也不能因为「没得挑」而不回复。
             pool = remaining or pool
 
-        seed = draw_seed(date, user_key, chat_key, category)
+        seed = draw_seed(date, user_key, chat_key, category, epoch)
         chosen = pick_image(tuple(pool), seed)
         if chosen is None:
             return None

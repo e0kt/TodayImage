@@ -98,6 +98,7 @@ class GsCoreContractTests(unittest.TestCase):
                 '今日图片-图库管理',
                 '今日图片-图片上传',
                 '今日图片-群授权',   # feature 003
+                '今日图片-重置',     # feature 004
                 self.DAILY_SV,
             ]),
         )
@@ -134,6 +135,39 @@ class GsCoreContractTests(unittest.TestCase):
                             or str(keyword).startswith('TodayImage禁止'),
                             f'{keyword} is registered on {name} (pm={other.pm}), not the pm=3 SV',
                         )
+
+    def test_reset_sv_is_restricted_to_master_and_superuser(self) -> None:
+        """pm=1 就是权限本身（research R2）。
+
+        核心判据是 user_pm > sv.pm 即拒绝，阶梯为
+        0=master, 1=superuser, 2=群主, 3=群管理员, 6=普通用户。
+        若上游改了阶梯，群管理员会悄悄获得「改变全群当日结果」的能力 ——
+        这是本功能后果最严重的回归，故钉死而非假设（FR-409、FR-410）。
+        """
+        sv = PLUGIN_SVS.get('今日图片-重置')
+        self.assertIsNotNone(sv, '重置 SV 必须已注册')
+        self.assertEqual(sv.pm, 1)
+
+        owned = set()
+        for table in sv.TL.values():
+            owned.update(table)
+        self.assertTrue(any(k.startswith('TodayImage重置') for k in owned))
+
+        # 该命令不得出现在任何权限更宽松的 SV 上
+        for name, other in PLUGIN_SVS.items():
+            if name == '今日图片-重置':
+                continue
+            for table in other.TL.values():
+                for keyword in table:
+                    with self.subTest(sv=name, keyword=keyword):
+                        self.assertFalse(
+                            str(keyword).startswith('TodayImage重置'),
+                            f'{keyword} 注册在 {name}(pm={other.pm})，而非 pm=1 的 SV',
+                        )
+
+    def test_reset_is_stricter_than_group_authorisation(self) -> None:
+        """有意的权限差异：授权 pm<=3（群管理员可用），重置 pm<=1（仅主人）。"""
+        self.assertLess(PLUGIN_SVS['今日图片-重置'].pm, PLUGIN_SVS['今日图片-群授权'].pm)
 
     def test_priorities_stay_above_the_incumbent_plugins(self) -> None:
         # TodayWaifu occupies 0-10; ours must lose any keyword collision (research R3).
