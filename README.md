@@ -167,36 +167,52 @@ Discord、KOOK、QQ 频道用的是 **`channel`（服务器频道）和 `sub_cha
 | --- | --- | --- | --- | --- |
 | QQ 群 | `group` | `465…` | 群聊 | `465…` |
 | QQ / Discord 私聊 | `direct` | — | **私聊** | — |
-| Discord 服务器频道 | `channel` | `chan-123` | 群聊 | `chan-123` |
-| Discord 线程 | `sub_channel` | `thread-9` | 群聊 | `thread-9` |
+| Discord 服务器频道（实测） | `group` | `9150…`（snowflake） | 群聊 | `9150…` |
+| 频道型 `user_type` | `channel` / `sub_channel` | 任意 | 群聊 | `group_id` |
 | 频道但适配器没填 `group_id` | `channel` | `None` | **仍算群聊** | 空键 → 拒绝 |
 | 适配器忘了给私聊设 `direct` | `group` | `None` | 私聊 | — |
 | 适配器自造的新取值 | `guild_forum` | 任意 | **仍算群聊** | fail closed |
 
-倒数第三行是重点：如果按 `group_id is None` 判私聊，一个没填 `group_id` 的 Discord 频道会被当成私聊，
-**分群授权会被整个绕过**。插件有测试专门钉住这一条，并禁止任何模块再用 `group_id` 做会话分类。
+**实测说明**：本项目在用的 Discord 适配器发的是 `user_type='group'` + snowflake 形式的 `group_id`，
+并不会用到 `channel` / `sub_channel`。表里那几行是为**其它**适配器准备的防御 ——
+核心确实定义了这四种取值，换一个适配器就可能用上。
+
+「频道但没填 `group_id`」那行是重点：若按 `group_id is None` 判私聊，这种事件会被当成私聊，
+**分群授权会被整个绕过**。目前在用的适配器不会产生这种事件，但核心允许，所以插件有测试专门钉住这一条，
+并禁止任何模块再用 `group_id` 做会话分类。
 
 ### 授权粒度
 
-授权键就是 `group_id`，所以 **Discord 的每个频道、每个线程都要单独授权**。
-线程不会继承父频道的授权 —— 事件里拿不到父频道 ID，与其猜，不如让它 fail closed。
+授权键就是 `group_id`。实测中 Discord 适配器对一个服务器只给一个 snowflake，
+因此**授权是按该 ID 生效**，而不是按每个频道。若换成会逐频道下发不同 `group_id` 的适配器，
+则每个频道都要单独授权；线程也不会继承父频道 —— 事件里拿不到父频道 ID，与其猜，不如 fail closed。
 
 ### 每日记录跨平台隔离
 
 记录键含 `bot_id`，所以 Discord 的 DM 是 `direct:discord:<uid>`、QQ 的是 `direct:onebot:<uid>`，
 同一个人在两个平台上互不干扰。
 
-### 接入时必须先验证的一件事
+### 已实测：Discord 上只有机器人主人能授权
 
 > [!IMPORTANT]
-> **Discord 适配器是否会下发 `user_pm`？**
-> 分群授权命令挂在 `pm=3` 的 SV 上，靠核心用 `user_pm` 拦人。QQ 的 OneBot 适配器会给群管理员下发 `user_pm=3`，
-> 但 Discord 适配器是否把服务器管理员映射成 `pm<=3` **需要实测**。
+> **Discord 适配器不映射服务器权限。** 实测统计（本项目的生产日志）：
 >
-> 如果它恒发 `user_pm=6`，那么 Discord 上只有机器人主人（`masters` 配置里的账号，`pm=0`）能授权频道 ——
-> 功能仍可用，但管理员自助授权不可用。
+> | `user_pm` | Discord | QQ (OneBot) |
+> | --- | --- | --- |
+> | `0` 主人 | 19 | 923 |
+> | `2` 群主 | **0** | 49 |
+> | `3` 群管理员 | **0** | 308 |
+> | `6` 普通用户 | 15 | 1554 |
 >
-> 验证方法：让一个 Discord 服务器管理员发一条消息，在 `data/logs/` 里查该事件的 `user_pm` 值。
+> Discord 侧只出现 `0` 和 `6`，且那些 `0` 全部来自 `masters` 配置里的账号。
+> QQ 侧有大量 `2` / `3`，对比鲜明。
+>
+> **后果**：Discord 频道里 `TodayImage允许` / `TodayImage禁止` / `TodayImage列表`
+> **只有机器人主人能用**，服务器管理员会被当成普通用户拒绝。频道照常能发图，
+> 只是授权得由主人代劳。
+>
+> 换别的 Discord 适配器前建议重测：让一个非主人的服务器管理员发条消息，
+> 在 `data/logs/` 里查该事件的 `user_pm`。
 
 ### 图片体积
 
