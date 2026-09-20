@@ -116,6 +116,16 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         [],
     ),
 
+    'TodayImageDeleteMasterOnly': GsBoolConfig(
+        '删图仅限主人',
+        '回复删图默认群管理员及以上即可使用 —— 错标本身就是全局的，'
+        '能发现的人修掉它对所有群都是净收益。'
+        '开启后收紧为仅主人/superuser，适用于图库即原始数据、删除不可恢复的部署；'
+        '图库由 Immich 等外部库导出时不必开启，原图仍在，重新导出即可恢复。'
+        '无论此项如何，普通群友都无法删除',
+        False,
+    ),
+
     '_DividerPerformance': GsDivider('性能设置', ''),
     'TodayImageScanCacheTTL': GsIntConfig(
         '目录扫描缓存时间(秒)',

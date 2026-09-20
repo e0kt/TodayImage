@@ -136,7 +136,12 @@ async def daily_image(bot: Bot, ev: Event):
 
     logger.debug(f'{LOG_PREFIX} 用户 {ev.user_id} 抽到 {category.name}: {image}')
     try:
-        await send_image_reply(bot, ev, caption_for(category), image)
+        await send_image_reply(
+            bot, ev, caption_for(category), image,
+            category_name=category.name,
+            chat_key=chat_key(ev),
+            user_key=user_key(ev),
+        )
     except OSError as exc:
         logger.warning(f'{LOG_PREFIX} 读取图片失败 {image}: {exc}')
 

@@ -30,6 +30,9 @@ PURE_MODULES = (
     'permissions_text',
     'chat_context',
     'reset_text',
+    'sent_index',
+    'delete_resolve',
+    'delete_text',
 )
 
 

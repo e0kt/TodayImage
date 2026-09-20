@@ -99,6 +99,7 @@ class GsCoreContractTests(unittest.TestCase):
                 '今日图片-图片上传',
                 '今日图片-群授权',   # feature 003
                 '今日图片-重置',     # feature 004
+                '今日图片-删图',     # feature 005
                 self.DAILY_SV,
             ]),
         )
@@ -168,6 +169,36 @@ class GsCoreContractTests(unittest.TestCase):
     def test_reset_is_stricter_than_group_authorisation(self) -> None:
         """有意的权限差异：授权 pm<=3（群管理员可用），重置 pm<=1（仅主人）。"""
         self.assertLess(PLUGIN_SVS['今日图片-重置'].pm, PLUGIN_SVS['今日图片-群授权'].pm)
+
+    def test_delete_sv_upper_bound_is_group_admin(self) -> None:
+        """pm=3 是硬上界：普通群友在任何配置下都进不来。
+
+        默认权限也是 pm<=3 —— 错标本身就是全局的，能发现的人修掉它对所有群
+        都是净收益。配置只能把实际阈值**收紧**到 pm<=1，不能放宽（CF-504）。
+        """
+        sv = PLUGIN_SVS.get('今日图片-删图')
+        self.assertIsNotNone(sv, '删图 SV 必须已注册')
+        self.assertEqual(sv.pm, 3)
+
+        owned = set()
+        for table in sv.TL.values():
+            owned.update(table)
+        self.assertIn('删除', owned)
+
+        for name, other in PLUGIN_SVS.items():
+            if name == '今日图片-删图':
+                continue
+            for table in other.TL.values():
+                self.assertNotIn(
+                    '删除', table,
+                    f'「删除」注册在 {name}(pm={other.pm})，而非 pm=3 的删图 SV',
+                )
+
+    def test_delete_is_not_stricter_than_group_authorisation(self) -> None:
+        """删图与分群授权同级：修复全局错误不该比设置本群可见范围更难。"""
+        self.assertEqual(
+            PLUGIN_SVS['今日图片-删图'].pm, PLUGIN_SVS['今日图片-群授权'].pm
+        )
 
     def test_priorities_stay_above_the_incumbent_plugins(self) -> None:
         # TodayWaifu occupies 0-10; ours must lose any keyword collision (research R3).

@@ -23,6 +23,7 @@ from .category_registry import Category, normalize_prefix, read_overrides, resol
 from .file_cache import read_file_bytes_cached
 from .blocklist import is_blocked
 from .chat_context import chat_group_key, is_direct_chat
+from .sent_index import SentIndex
 from .group_permissions import is_tag_allowed, normalize_group_key, normalize_tag, tags_for_group
 from .daily_store import reset_group_category
 from .gallery import (
@@ -61,6 +62,10 @@ group_permission_sv = SV('今日图片-群授权', pm=3, priority=21)
 # 重置会改变全群所有人当天已经拿到的结果，外溢比授权更大，所以收紧到 pm=1
 # —— 只有 master(0) 与 superuser(1)，群主(2)与群管理员(3)都不行。
 reset_sv = SV('今日图片-重置', pm=1, priority=21)
+# 删图默认群管理员及以上即可 —— 错标本身就是全局的，能发现的人修掉它对所有群都是净收益。
+# pm=3 同时是**硬上界**：普通群友在任何配置下都进不来。
+# 实际阈值可由 TodayImageDeleteMasterOnly 再收紧到 pm<=1（只能收紧，不能放宽）。
+delete_sv = SV('今日图片-删图', pm=3, priority=21)
 
 
 # ── 配置取值 ──────────────────────────────────────────────────────────────────
@@ -138,6 +143,29 @@ def upload_max_bytes() -> int:
 
 def scan_cache_ttl() -> float:
     return float(cfg_int('TodayImageScanCacheTTL', 300, minimum=0))
+
+
+# 已发图片回执表。仅内存、有界；丢失只会让回复删图退化为拒绝，不会误删。
+sent_index = SentIndex()
+
+
+def delete_master_only() -> bool:
+    """是否把回复删图收紧为仅主人。每次请求现读（CF-503）。"""
+    return cfg_bool('TodayImageDeleteMasterOnly', False)
+
+
+def can_delete_image(ev: Event) -> bool:
+    """删图权限判定 —— 本项目唯一一处 handler 侧权限判断，集中在这里。
+
+    SV 的 pm=3 已经挡掉了普通群友；这里只做**收紧**，永不放宽到 SV 之外（CF-504）。
+    """
+    if not delete_master_only():
+        return True
+    try:
+        user_pm = int(getattr(ev, 'user_pm', 6))
+    except (TypeError, ValueError):
+        user_pm = 6
+    return user_pm <= 1
 
 
 def direct_unlimited() -> bool:
@@ -305,7 +333,15 @@ def can_upload(ev: Event) -> bool:
 
 # ── 发送 ──────────────────────────────────────────────────────────────────────
 
-async def send_image_reply(bot: Bot, ev: Event, text: str, image_path: str) -> None:
+async def send_image_reply(
+    bot: Bot,
+    ev: Event,
+    text: str,
+    image_path: str,
+    category_name: str = '',
+    chat_key: str = '',
+    user_key: str = '',
+) -> None:
     """带可选 at 的图片回复。
 
     图片字节走 mtime 缓存后再交给 MessageSegment.image；
@@ -319,7 +355,21 @@ async def send_image_reply(bot: Bot, ev: Event, text: str, image_path: str) -> N
         messages.append(text)
     image_bytes = await asyncio.to_thread(read_file_bytes_cached, Path(image_path))
     messages.append(MessageSegment.image(image_bytes))
-    await safe_send(bot, messages)
+
+    # wait_recall=True 是拿到消息 ID 的唯一办法（核心的 target_send 只有这条路返回 ids），
+    # 而消息 ID 是「回复删图」反查文件的唯一依据 —— 适配器不会把被回复的图给我们。
+    # 拿不到就**立即放弃**：不重试、不报错、不影响本次发送的结果。
+    message_ids = None
+    try:
+        message_ids = await safe_send(bot, messages, wait_recall=True)
+    except TypeError:
+        # 老版本核心不认这个参数时退回普通发送，功能退化但发送不受影响。
+        await safe_send(bot, messages)
+
+    if message_ids:
+        sent_index.remember(
+            message_ids, image_path, category_name, chat_key, user_key
+        )
 
 
 __all__ = [
@@ -331,7 +381,9 @@ __all__ = [
     'is_master', 'load_categories', 'logger', 'overrides_path', 'plugin_enabled',
     'allowed_blocklist', 'allowed_tags_for', 'build_category_index', 'category_index', 'chat_group_key',
     'configured_blocklist',
-    'default_group_tags', 'direct_unlimited', 'group_permission_sv', 'is_blocked',
+    'can_delete_image', 'default_group_tags', 'delete_master_only', 'delete_sv',
+    'direct_unlimited', 'group_permission_sv', 'is_blocked',
+    'sent_index',
     'is_direct_chat',
     'is_tag_allowed',
     'normalize_group_key', 'normalize_tag', 'permissions_path', 'tags_for_group',

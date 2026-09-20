@@ -72,6 +72,10 @@
 
 ---
 
+> **自 feature 005 起**：ResetEpoch 与 ResetExclusion 不只被「整类型重置」触发。
+> 回复删图会按**图片路径**清理记录，并对每个受影响的 (会话, 类型) 同样 +1 代数、
+> 把被删文件加入排除集。见 [005 data-model](../005-reply-delete-image/data-model.md)。
+
 ## Entity: ResetResult（新增）
 
 一次重置的结果，仅用于回复与日志。

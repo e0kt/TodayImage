@@ -276,6 +276,79 @@ def clear_locks() -> None:
     _locks.clear()
 
 
+def records_holding_image(
+    records: dict[str, dict[str, Any]], image: str
+) -> tuple[str, ...]:
+    """当天有哪些记录钉着这张图。按**完整路径**匹配。
+
+    不按 8 位短 ID：短 ID 由文件名派生，不同子目录下可能重复，
+    按它匹配会误伤同名的另一张图（V-DOC-7）。
+    """
+    target = str(image or '')
+    if not target:
+        return ()
+    return tuple(
+        key for key, entry in records.items()
+        if isinstance(entry, dict) and entry.get('image') == target
+    )
+
+
+async def clear_records_for_image(
+    path: Path,
+    date: str,
+    image: str,
+) -> tuple[int, int]:
+    """清掉所有钉着这张图的当日记录，并让那些人能重抽。
+
+    返回 (清理条数, 受影响会话数)。
+
+    图库是全局的 —— 同一张图可能被多个群、多个用户抽到，所以扫描的是**当天全部**
+    记录，而不只是某一个会话（V-DOC-4）。
+
+    每个受影响的 (会话, 类型) 各自 +1 重置代数并把该图加入排除集，复用 004 的机制。
+    三件事缺一不可：光清记录会让人用同样的种子抽回同一张，而这张图已经被删，
+    结果会退化成「抽到不存在的文件 -> 静默」，把错标问题变成"今天没图"问题。
+    """
+    target = str(image or '')
+    if not target:
+        return 0, 0
+
+    # 先读一次确定要动哪些 (会话, 类型)，再逐个持锁修改，避免长时间握着多把锁。
+    records = await asyncio.to_thread(load_records, path, date)
+    holder_keys = records_holding_image(records, target)
+    if not holder_keys:
+        return 0, 0
+
+    pairs: dict[tuple[str, str], list[str]] = {}
+    for key in holder_keys:
+        parsed = parse_key(key)
+        if parsed is None:
+            continue
+        chat_key, _user_key, category = parsed
+        pairs.setdefault((chat_key, normalize_tag(category)), []).append(key)
+
+    cleared = 0
+    for (chat_key, category), keys in pairs.items():
+        async with _lock_for(chat_key, category):
+            records, resets, excludes = await asyncio.to_thread(_load_payload, path, date)
+            survivors = {k: v for k, v in records.items() if k not in set(keys)}
+            cleared += len(records) - len(survivors)
+
+            rkey = reset_key(chat_key, category)
+            resets = dict(resets)
+            resets[rkey] = reset_epoch(resets, chat_key, category) + 1
+
+            excludes = dict(excludes)
+            excluded = list(excludes.get(rkey, ()))
+            if target not in excluded:
+                excluded.append(target)
+            excludes[rkey] = sorted(excluded)
+
+            await asyncio.to_thread(save_records, path, date, survivors, resets, excludes)
+
+    return cleared, len(pairs)
+
+
 async def reset_group_category(
     path: Path,
     date: str,
