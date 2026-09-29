@@ -64,12 +64,17 @@ async def _match_replied_image(ev: Event, tag: str, records: dict) -> str | None
     """
     refs = collect_image_refs(ev)
     if not refs:
+        logger.info(f'{LOG_PREFIX} 删图识别：消息里没有图片引用')
         return None
 
     data = await asyncio.to_thread(read_image_bytes, refs[0], 32 * 1024 * 1024)
     if data is None:
+        # QQ 的图片 URL 带 rkey，有效期极短（实测分钟级就 "download url has expired"）。
+        # 下载失败不是错误，只是这一级用不上，继续往后退。
+        logger.info(f'{LOG_PREFIX} 删图识别：被回复的图下载失败，退到后续判定')
         return None
     blob = data[0]
+    logger.info(f'{LOG_PREFIX} 删图识别：已取到被回复的图 {len(blob):,} 字节')
 
     categories, _ = await load_categories()
     pool = [c.images for c in categories if normalize_tag(c.name) == tag]
@@ -78,8 +83,9 @@ async def _match_replied_image(ev: Event, tag: str, records: dict) -> str | None
 
     hit = await asyncio.to_thread(find_exact, blob, pool[0])
     if hit:
-        logger.debug(f'{LOG_PREFIX} 被回复的图字节级命中 {hit}')
+        logger.info(f'{LOG_PREFIX} 删图识别：字节级命中 {hit}')
         return hit
+    logger.info(f'{LOG_PREFIX} 删图识别：{len(pool[0])} 张里字节级未命中，尝试感知哈希')
 
     # 退到感知哈希，候选限定在当天该会话该类型的记录内
     from .daily_store import parse_key
@@ -98,8 +104,10 @@ async def _match_replied_image(ev: Event, tag: str, records: dict) -> str | None
         return None
 
     hit = await asyncio.to_thread(find_similar, blob, narrow, 8)
-    if hit:
-        logger.debug(f'{LOG_PREFIX} 被回复的图感知哈希命中 {hit}')
+    logger.info(
+        f'{LOG_PREFIX} 删图识别：感知哈希在 {len(narrow)} 个候选里'
+        f'{"命中 " + hit if hit else "未命中"}'
+    )
     return hit
 
 
@@ -130,6 +138,11 @@ async def delete_by_reply(bot: Bot, ev: Event):
         ev.reply_id, tag, sent_index, records, category_of.get, chat_group_key(ev),
         recent_window=delete_recent_window(),
         matched_image=matched,
+    )
+    logger.info(
+        f'{LOG_PREFIX} 删图判定：类型={tag} 结果={resolution.outcome} '
+        f'图片比对={"命中" if matched else "无"} 兜底={resolution.by_recency} '
+        f'候选={len(resolution.candidates)}'
     )
 
     # ── 拒绝分支：一律直接返回，不进入任何文件操作（FR-503、I-501）──
