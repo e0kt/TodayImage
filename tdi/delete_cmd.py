@@ -17,6 +17,7 @@ from .shared import (
     asyncio,
     can_delete_image,
     category_index,
+    delete_recent_window,
     chat_group_key,
     image_short_id,
     invalidate_scan_cache,
@@ -71,7 +72,8 @@ async def delete_by_reply(bot: Bot, ev: Event):
     category_of = await _category_of_map()
 
     resolution = resolve(
-        ev.reply_id, tag, sent_index, records, category_of.get, chat_group_key(ev)
+        ev.reply_id, tag, sent_index, records, category_of.get, chat_group_key(ev),
+        recent_window=delete_recent_window(),
     )
 
     # ── 拒绝分支：一律直接返回，不进入任何文件操作（FR-503、I-501）──
@@ -109,9 +111,12 @@ async def delete_by_reply(bot: Bot, ev: Event):
 
     logger.info(
         f'{LOG_PREFIX} 删图 {image}（操作者 {ev.user_id}，会话 {chat_group_key(ev) or "direct"}，'
-        f'文件已删={existed}，清理 {cleared} 条记录，影响 {chats} 个会话）'
+        f'文件已删={existed}，清理 {cleared} 条记录，影响 {chats} 个会话，'
+        f'兜底={resolution.by_recency}）'
     )
 
     if not existed:
         return await send_text(bot, missing_file_reply(tag, affected=cleared))
-    await send_text(bot, success_reply(tag, affected=cleared))
+    await send_text(
+        bot, success_reply(tag, affected=cleared, by_recency=resolution.by_recency)
+    )

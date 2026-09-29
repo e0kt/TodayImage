@@ -17,13 +17,17 @@ class Ref:
 
 
 class FakeIndex:
-    """最小化的回执表快照。"""
+    """最小化的回执表替身。默认不提供时间兜底，用于测试前两级精确路径。"""
 
-    def __init__(self, mapping=None):
+    def __init__(self, mapping=None, recent_ref=None):
         self._m = mapping or {}
+        self._recent = recent_ref
 
     def lookup(self, message_id):
         return self._m.get(str(message_id))
+
+    def recent(self, chat_key, category, now=None, within=0.0):
+        return self._recent if within > 0 else None
 
 
 class ResolveTests(unittest.TestCase):
@@ -142,3 +146,94 @@ class ResolveTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RecencyFallbackTests(unittest.TestCase):
+    """第 3 级：按发送时间兜底。
+
+    第 1 级（回执）在不支持回执的适配器上永远落空，第 2 级（当日唯一）
+    在多人抽过同一类型时落空 —— 这正是线上遇到的情形。
+    第 3 级用"最近发出的那张"兜底，代价是回复旧图会删错，故有时间窗。
+    """
+
+    def setUp(self):
+        self.dr = load_pure_module('delete_resolve')
+        self.ds = load_pure_module('daily_store')
+        self.si = load_pure_module('sent_index')
+        self.category_of = {f'/img/靴子/{c}.png': '靴子' for c in 'abc'}
+        self.category_of['/img/白丝/w.png'] = '白丝'
+
+    def records(self, *triples):
+        return {self.ds.record_key(c, u, cat): {'image': img} for c, u, cat, img in triples}
+
+    def resolve(self, reply_id, tag, index, records, now=1000.0, within=600):
+        return self.dr.resolve(
+            reply_id, tag, index, records, self.category_of.get,
+            chat_key='g1', now=now, recent_window=within,
+        )
+
+    def test_recency_resolves_what_used_to_be_ambiguous(self):
+        # 线上实际场景：群里 3 个人抽过靴子，回执又没命中
+        idx = self.si.SentIndex()
+        idx.remember(None, '/img/靴子/c.png', '靴子', 'g1', 'u3', now=990.0)
+        recs = self.records(
+            ('g1', 'u1', '靴子', '/img/靴子/a.png'),
+            ('g1', 'u2', '靴子', '/img/靴子/b.png'),
+            ('g1', 'u3', '靴子', '/img/靴子/c.png'),
+        )
+        r = self.resolve('unknown', '靴子', idx, recs)
+        self.assertEqual(r.outcome, 'ok')
+        self.assertEqual(r.image, '/img/靴子/c.png')
+        self.assertTrue(r.by_recency, '必须标记为兜底路径，供回复提示')
+
+    def test_exact_paths_are_preferred_over_recency(self):
+        # 回执命中时不得退到兜底 —— 兜底会删错
+        class Ref:
+            image, category, chat_key, user_key = '/img/靴子/a.png', '靴子', 'g1', 'u1'
+        class Idx:
+            def lookup(self, mid): return Ref()
+            def recent(self, *a, **k): raise AssertionError('回执命中时不该查兜底')
+        r = self.resolve('m1', '靴子', Idx(), {})
+        self.assertEqual(r.image, '/img/靴子/a.png')
+        self.assertFalse(r.by_recency)
+
+    def test_unique_record_is_preferred_over_recency(self):
+        idx = self.si.SentIndex()
+        idx.remember(None, '/img/靴子/c.png', '靴子', 'g1', 'u3', now=990.0)
+        recs = self.records(('g1', 'u1', '靴子', '/img/靴子/a.png'))
+        r = self.resolve('unknown', '靴子', idx, recs)
+        self.assertEqual(r.image, '/img/靴子/a.png', '唯一记录是精确的，优先于兜底')
+        self.assertFalse(r.by_recency)
+
+    def test_outside_the_window_falls_back_to_refusing(self):
+        idx = self.si.SentIndex()
+        idx.remember(None, '/img/靴子/c.png', '靴子', 'g1', 'u3', now=100.0)
+        recs = self.records(
+            ('g1', 'u1', '靴子', '/img/靴子/a.png'),
+            ('g1', 'u2', '靴子', '/img/靴子/b.png'),
+        )
+        r = self.resolve('unknown', '靴子', idx, recs, now=100.0 + 601)
+        self.assertEqual(r.outcome, 'ambiguous')
+        self.assertIsNone(r.image)
+
+    def test_recency_still_honours_the_tag_check(self):
+        # 兜底也不能绕过「标签必须与实际类型一致」
+        idx = self.si.SentIndex()
+        idx.remember(None, '/img/白丝/w.png', '白丝', 'g1', 'u1', now=990.0)
+        r = self.resolve('unknown', '白丝', idx, {}, now=1000.0)
+        self.assertEqual(r.outcome, 'ok')
+        r2 = self.dr.resolve(
+            'unknown', '靴子', idx, {}, self.category_of.get,
+            chat_key='g1', now=1000.0, recent_window=600,
+        )
+        self.assertNotEqual(r2.outcome, 'ok')
+
+    def test_disabling_the_window_disables_the_fallback(self):
+        idx = self.si.SentIndex()
+        idx.remember(None, '/img/靴子/c.png', '靴子', 'g1', 'u3', now=990.0)
+        recs = self.records(
+            ('g1', 'u1', '靴子', '/img/靴子/a.png'),
+            ('g1', 'u2', '靴子', '/img/靴子/b.png'),
+        )
+        r = self.resolve('unknown', '靴子', idx, recs, within=0)
+        self.assertEqual(r.outcome, 'ambiguous')

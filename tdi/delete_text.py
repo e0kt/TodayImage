@@ -13,12 +13,18 @@ FALLBACK = '请改用「删除图片 <类型> <图片ID>」，图片ID 可通过
 NOT_A_DRAW = '请对机器人发出的那张图**回复**本命令，例如回复图片并发送「删除黑丝」。'
 NOT_FOUND = f'认不出这是哪一张。{FALLBACK}'
 MASTER_ONLY = '当前配置下只有机器人主人可以删除图库文件。'
+# 走兜底时必须说明 —— 万一删错了，要让人当场就能看出来
+BY_RECENCY_NOTE = '（按「本群该类型最近发出的那张」判定，若删错了请用「上传图片」补回）'
 
 
-def success_reply(category: str, *, affected: int) -> str:
+def success_reply(category: str, *, affected: int, by_recency: bool = False) -> str:
     if affected > 0:
-        return f'已删除【{category}】的这张图，{affected} 人可以重新抽了。'
-    return f'已删除【{category}】的这张图。'
+        text = f'已删除【{category}】的这张图，{affected} 人可以重新抽了。'
+    else:
+        text = f'已删除【{category}】的这张图。'
+    if by_recency:
+        text += BY_RECENCY_NOTE
+    return text
 
 
 def missing_file_reply(category: str, *, affected: int) -> str:

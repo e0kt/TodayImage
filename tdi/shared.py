@@ -149,6 +149,11 @@ def scan_cache_ttl() -> float:
 sent_index = SentIndex()
 
 
+def delete_recent_window() -> int:
+    """删图兜底时间窗（秒）；0 表示禁用兜底。"""
+    return cfg_int('TodayImageDeleteRecentWindow', 600, minimum=0)
+
+
 def delete_master_only() -> bool:
     """是否把回复删图收紧为仅主人。每次请求现读（CF-503）。"""
     return cfg_bool('TodayImageDeleteMasterOnly', False)
@@ -366,10 +371,11 @@ async def send_image_reply(
         # 老版本核心不认这个参数时退回普通发送，功能退化但发送不受影响。
         await safe_send(bot, messages)
 
-    if message_ids:
-        sent_index.remember(
-            message_ids, image_path, category_name, chat_key, user_key
-        )
+    # 无论有没有拿到消息 ID 都要登记：不支持回执的适配器上 message_ids 恒为空，
+    # 那时「最近发出的那张」是唯一可用的定位依据。
+    sent_index.remember(
+        message_ids, image_path, category_name, chat_key, user_key
+    )
 
 
 __all__ = [
@@ -381,7 +387,8 @@ __all__ = [
     'is_master', 'load_categories', 'logger', 'overrides_path', 'plugin_enabled',
     'allowed_blocklist', 'allowed_tags_for', 'build_category_index', 'category_index', 'chat_group_key',
     'configured_blocklist',
-    'can_delete_image', 'default_group_tags', 'delete_master_only', 'delete_sv',
+    'can_delete_image', 'default_group_tags', 'delete_master_only',
+    'delete_recent_window', 'delete_sv',
     'direct_unlimited', 'group_permission_sv', 'is_blocked',
     'sent_index',
     'is_direct_chat',

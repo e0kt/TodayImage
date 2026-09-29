@@ -2,10 +2,16 @@
 
 PURE 模块：只依赖标准库，不导入 gsuid_core。不触碰文件系统，因此拒绝分支可穷举测试。
 
-**三级退让**（顺序即优先级）：
-  1. reply_id 命中回执表        -> 唯一确定
-  2. 未命中，但该会话该类型当天恰好一条记录 -> 采用
-  3. 零条或多条                 -> 拒绝
+**四级退让**（顺序即优先级，前两级精确，第三级是兜底）：
+  1. reply_id 命中回执表                    -> 精确
+  2. 该会话该类型当天恰好一条记录            -> 精确
+  3. 时间窗内该会话该类型最近发出的那张      -> **兜底**，结果标记 by_recency
+  4. 仍不确定                               -> 拒绝
+
+第 3 级是刻意接受的取舍：实测该部署的适配器不返回消息 ID，第 1 级恒失效；
+群里多人抽过同一类型时第 2 级也失效，于是功能只在"恰好一人抽过"时可用。
+代价是**回复一张旧图会删错**，因此有时间窗兜底，且结果会标记 by_recency，
+由调用方在回复里说明，让误删能被立刻发现。
 
 **任何非 ok 的结果都不得携带可删除的路径。** 这是一个不可逆且全局的操作，
 误删一个文件影响所有群和今后所有抽取，而"功能暂时不可用"只是不便。
@@ -31,6 +37,8 @@ class DeleteResolution:
     image: str | None = None
     candidates: tuple[str, ...] = field(default=())
     actual_category: str | None = None
+    # True 表示走的是"最近发出的那张"兜底，不是精确匹配 —— 回复里必须说明
+    by_recency: bool = False
 
 
 def resolve(
@@ -40,6 +48,8 @@ def resolve(
     today_records: dict[str, dict[str, Any]],
     category_of: Callable[[str], Any],
     chat_key: str,
+    now: float | None = None,
+    recent_window: float = 0.0,
 ) -> DeleteResolution:
     """Args:
         reply_id: 被回复消息的 ID；为空说明根本不是回复。
@@ -67,6 +77,14 @@ def resolve(
     holders = _records_in(today_records, chat_key, wanted)
     if len(holders) == 1:
         return _verify(holders[0], wanted, category_of)
+    # 第 3 级：时间窗内最近发出的那张。精确路径都落空后才用。
+    ref = sent_index.recent(chat_key, wanted, now=now, within=recent_window)
+    if ref is not None:
+        resolved = _verify(ref.image, wanted, category_of)
+        if resolved.outcome == OK:
+            return DeleteResolution(OK, image=resolved.image, by_recency=True)
+        return resolved
+
     if len(holders) > 1:
         return DeleteResolution(AMBIGUOUS, candidates=tuple(holders))
 

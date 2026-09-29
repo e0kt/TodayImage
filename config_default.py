@@ -126,6 +126,15 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         False,
     ),
 
+    'TodayImageDeleteRecentWindow': GsIntConfig(
+        '删图兜底时间窗(秒)',
+        '回复删图认不出是哪一张时，退而删除「该群该类型最近发出的那张」，'
+        '仅在该时间窗内有效。适配器不返回消息 ID 时这是唯一可用的定位方式。'
+        '代价是回复一张旧图会删错，所以窗口不宜太大；0 表示禁用兜底、认不出就拒绝',
+        600,
+        3600,
+    ),
+
     '_DividerPerformance': GsDivider('性能设置', ''),
     'TodayImageScanCacheTTL': GsIntConfig(
         '目录扫描缓存时间(秒)',
