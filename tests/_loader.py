@@ -33,6 +33,7 @@ PURE_MODULES = (
     'sent_index',
     'delete_resolve',
     'delete_text',
+    'image_match',
 )
 
 

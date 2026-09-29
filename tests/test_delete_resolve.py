@@ -237,3 +237,60 @@ class RecencyFallbackTests(unittest.TestCase):
         )
         r = self.resolve('unknown', '靴子', idx, recs, within=0)
         self.assertEqual(r.outcome, 'ambiguous')
+
+
+class RepliedImageTests(unittest.TestCase):
+    """第 0 级：直接拿被回复的那张图去图库里比对。
+
+    这是识别的正路 —— 不依赖发送回执（本部署适配器不返回消息 ID），
+    也不怕核心重启清空内存表。
+    """
+
+    def setUp(self):
+        self.dr = load_pure_module('delete_resolve')
+        self.ds = load_pure_module('daily_store')
+        self.category_of = {'/img/靴子/a.png': '靴子', '/img/靴子/b.png': '靴子',
+                            '/img/白丝/w.png': '白丝'}
+
+    def records(self, *triples):
+        return {self.ds.record_key(c, u, cat): {'image': img} for c, u, cat, img in triples}
+
+    def resolve(self, **kw):
+        base = dict(
+            reply_id='m1', tag='靴子', sent_index=_NoIndex(),
+            today_records={}, category_of=self.category_of.get, chat_key='g1',
+        )
+        base.update(kw)
+        return self.dr.resolve(**base)
+
+    def test_matched_image_wins_over_everything_else(self):
+        # 多条记录本来会是 ambiguous，但拿到了图就不必猜
+        recs = self.records(
+            ('g1', 'u1', '靴子', '/img/靴子/a.png'),
+            ('g1', 'u2', '靴子', '/img/靴子/b.png'),
+        )
+        r = self.resolve(today_records=recs, matched_image='/img/靴子/b.png')
+        self.assertEqual(r.outcome, 'ok')
+        self.assertEqual(r.image, '/img/靴子/b.png')
+        self.assertFalse(r.by_recency, '这是精确匹配，不是兜底')
+
+    def test_matched_image_still_honours_the_tag_check(self):
+        r = self.resolve(tag='靴子', matched_image='/img/白丝/w.png')
+        self.assertEqual(r.outcome, 'tag_mismatch')
+        self.assertIsNone(r.image)
+
+    def test_falls_through_when_nothing_matched(self):
+        recs = self.records(('g1', 'u1', '靴子', '/img/靴子/a.png'))
+        r = self.resolve(today_records=recs, matched_image=None)
+        self.assertEqual(r.outcome, 'ok')
+        self.assertEqual(r.image, '/img/靴子/a.png', '应退回当日唯一记录')
+
+    def test_works_even_with_an_empty_reply_id(self):
+        # 拿到图之后，消息 ID 已经不重要了
+        r = self.resolve(reply_id=None, matched_image='/img/靴子/a.png')
+        self.assertEqual(r.outcome, 'ok')
+
+
+class _NoIndex:
+    def lookup(self, mid): return None
+    def recent(self, *a, **k): return None

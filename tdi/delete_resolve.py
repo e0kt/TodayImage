@@ -2,11 +2,17 @@
 
 PURE 模块：只依赖标准库，不导入 gsuid_core。不触碰文件系统，因此拒绝分支可穷举测试。
 
-**四级退让**（顺序即优先级，前两级精确，第三级是兜底）：
+**退让顺序**（越靠前越精确）：
+  0. **被回复的那张图本身**比对图库命中      -> 精确，且最可靠
   1. reply_id 命中回执表                    -> 精确
   2. 该会话该类型当天恰好一条记录            -> 精确
   3. 时间窗内该会话该类型最近发出的那张      -> **兜底**，结果标记 by_recency
   4. 仍不确定                               -> 拒绝
+
+第 0 级是正路：适配器会把被回复的图放进 ev.image / ev.image_list，
+拿到图本身就不必依赖发送回执（本部署的 OneBot 适配器根本不返回消息 ID），
+也不怕核心重启清空内存表。早期调研误判「拿不到被回复的图」，
+是因为只采样了回复**文字**消息的事件。
 
 第 3 级是刻意接受的取舍：实测该部署的适配器不返回消息 ID，第 1 级恒失效；
 群里多人抽过同一类型时第 2 级也失效，于是功能只在"恰好一人抽过"时可用。
@@ -50,6 +56,7 @@ def resolve(
     chat_key: str,
     now: float | None = None,
     recent_window: float = 0.0,
+    matched_image: str | None = None,
 ) -> DeleteResolution:
     """Args:
         reply_id: 被回复消息的 ID；为空说明根本不是回复。
@@ -58,10 +65,15 @@ def resolve(
         today_records: 当天全部记录。
         category_of: 文件路径 -> 实际所属类型；用于校验标签。
         chat_key: 命令所在会话，第 2 级解析的范围。
+        matched_image: 被回复的图已比对出的本地文件路径；有值时直接采用。
     """
     wanted = normalize_tag(tag)
     if not wanted:
         return DeleteResolution(NOT_A_DRAW)
+
+    # 第 0 级：被回复的那张图已经比对出了具体文件 —— 最可靠，优先于一切。
+    if matched_image:
+        return _verify(matched_image, wanted, category_of)
 
     key = str(reply_id or '').strip()
     if not key:

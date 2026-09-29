@@ -32,6 +32,8 @@ from .shared import (
     send_text,
 )
 from .daily_store import clear_records_for_image, current_date, load_records
+from .image_input import collect_image_refs, read_image_bytes
+from .image_match import find_exact, find_similar
 from .delete_resolve import AMBIGUOUS, NOT_A_DRAW, NOT_FOUND, OK, TAG_MISMATCH, resolve
 from .delete_text import (
     MASTER_ONLY,
@@ -48,6 +50,57 @@ async def _category_of_map() -> dict[str, str]:
     """图片绝对路径 -> 所属类型。用于校验标签是否写对。"""
     categories, _ = await load_categories()
     return {image: c.name for c in categories for image in c.images}
+
+
+async def _match_replied_image(ev: Event, tag: str, records: dict) -> str | None:
+    """把被回复的那张图比对回本地文件。
+
+    适配器会把被回复的图放进 ev.image / ev.image_list（早期调研只采样了
+    回复文字消息的事件，误判为拿不到）。拿到图本身就不必依赖发送回执 ——
+    本部署的 OneBot 适配器根本不返回消息 ID，而内存表又会被重启清空。
+
+    先在**该类型**内做字节级比对；QQ 若重新编码则退到感知哈希，
+    但只对当天该会话的少数候选做，几万张图逐一解码不可接受。
+    """
+    refs = collect_image_refs(ev)
+    if not refs:
+        return None
+
+    data = await asyncio.to_thread(read_image_bytes, refs[0], 32 * 1024 * 1024)
+    if data is None:
+        return None
+    blob = data[0]
+
+    categories, _ = await load_categories()
+    pool = [c.images for c in categories if normalize_tag(c.name) == tag]
+    if not pool:
+        return None
+
+    hit = await asyncio.to_thread(find_exact, blob, pool[0])
+    if hit:
+        logger.debug(f'{LOG_PREFIX} 被回复的图字节级命中 {hit}')
+        return hit
+
+    # 退到感知哈希，候选限定在当天该会话该类型的记录内
+    from .daily_store import parse_key
+
+    narrow = []
+    for key, entry in records.items():
+        parsed = parse_key(key)
+        if parsed is None:
+            continue
+        row_chat, _u, row_cat = parsed
+        if row_chat == chat_group_key(ev) and normalize_tag(row_cat) == tag:
+            image = entry.get('image')
+            if isinstance(image, str) and image:
+                narrow.append(image)
+    if not narrow:
+        return None
+
+    hit = await asyncio.to_thread(find_similar, blob, narrow, 8)
+    if hit:
+        logger.debug(f'{LOG_PREFIX} 被回复的图感知哈希命中 {hit}')
+    return hit
 
 
 @delete_sv.on_command(
@@ -71,9 +124,12 @@ async def delete_by_reply(bot: Bot, ev: Event):
     records = await asyncio.to_thread(load_records, records_path(), today)
     category_of = await _category_of_map()
 
+    matched = await _match_replied_image(ev, tag, records)
+
     resolution = resolve(
         ev.reply_id, tag, sent_index, records, category_of.get, chat_group_key(ev),
         recent_window=delete_recent_window(),
+        matched_image=matched,
     )
 
     # ── 拒绝分支：一律直接返回，不进入任何文件操作（FR-503、I-501）──
